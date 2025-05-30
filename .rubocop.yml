@@ -1,0 +1,85 @@
+plugins:
+  - rubocop-rails
+  - rubocop-performance
+  - rubocop-minitest
+  - rubocop-rake
+
+AllCops:
+  TargetRubyVersion: 2.6
+  NewCops: enable
+  Exclude:
+    - 'bin/**/*'
+    - 'log/**/*'
+    - 'test/dummy/**/*'
+    - 'vendor/**/*'
+    - 'Gemfile.lock'
+
+# Rails specific configuration
+Rails:
+  Enabled: true
+
+Rails/Output:
+  Enabled: false
+
+Rails/ApplicationRecord:
+  Enabled: false
+
+# Minitest specific configuration
+Minitest/MultipleAssertions:
+  Max: 10
+
+Minitest/EmptyLineBeforeAssertionMethods:
+  Enabled: false
+
+# Style configurations
+Style/Documentation:
+  Enabled: false
+
+Style/FrozenStringLiteralComment:
+  Enabled: true
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: consistent_comma
+
+Style/TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: consistent_comma
+
+Style/HashEachMethods:
+  Enabled: false
+
+# Layout configurations
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+
+# Metrics configurations
+Metrics/BlockLength:
+  Exclude:
+    - 'test/**/*'
+    - 'Rakefile'
+    - 'fixture_seed.gemspec'
+
+Metrics/MethodLength:
+  Max: 20
+  Exclude:
+    - 'test/**/*'
+
+Metrics/AbcSize:
+  Max: 25
+  Exclude:
+    - 'test/**/*'
+
+# Naming configurations
+Naming/FileName:
+  Exclude:
+    - 'Gemfile'
+    - 'Rakefile'
+
+# Performance configurations (from rubocop-performance)
+Performance/RedundantMerge:
+  Enabled: true
+
+Performance/StringReplacement:
+  Enabled: true
