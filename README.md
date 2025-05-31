@@ -1,6 +1,6 @@
 # FixtureSeed
 
-FixtureSeed is a Rails gem that automatically loads YAML fixture files from the `db/fixtures/` directory when running `rails db:seed`. It loads the fixtures in alphabetical order and handles foreign key constraint errors by retrying failed inserts after all other fixtures are loaded.
+FixtureSeed is a Rails gem that automatically loads YAML fixture files from the `db/fixtures/` directory before running `rails db:seed`. It loads the fixtures in alphabetical order and handles foreign key constraint errors by retrying failed inserts after all other fixtures are loaded.
 
 ## Installation
 

@@ -8,8 +8,10 @@ module FixtureSeed
 
     rake_tasks do
       if Rake::Task.task_defined?("db:seed")
-        Rake::Task["db:seed"].enhance do
-          Rails.logger.info "[FixtureSeed] Starting to load fixtures through db:seed enhancement"
+        Rake::Task["db:seed"].enhance([:load_fixtures])
+
+        task :load_fixtures do
+          Rails.logger.info "[FixtureSeed] Starting to load fixtures before db:seed"
           FixtureSeed.load_fixtures
           Rails.logger.info "[FixtureSeed] Finished loading fixtures"
         end
