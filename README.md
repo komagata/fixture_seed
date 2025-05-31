@@ -52,6 +52,23 @@ user2:
 
 The labels (e.g., `user1`, `user2`) should follow the pattern of the table name in singular form followed by a number.
 
+#### ERB Support
+
+For dynamic fixture generation, you can use ERB templates in your YAML files:
+
+```erb
+# users.yml
+<% 10.times do |i| %>
+user<%= i + 1 %>:
+  id: <%= i + 1 %>
+  name: "User <%= i + 1 %>"
+  email: "user<%= i + 1 %>@example.com"
+  created_at: <%= Time.current.to_s(:db) %>
+<% end %>
+```
+
+ERB templates have access to the full Rails environment, allowing you to use helpers, constants, and other Ruby code to generate dynamic fixture data.
+
 ### Fixture Loading Order
 
 #### Order-independent Loading

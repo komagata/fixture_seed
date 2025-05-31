@@ -1,5 +1,4 @@
-post1:
+post_1:
   id: 1
   title: Test Post
-  content: This is a test post
   user_id: 1

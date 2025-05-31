@@ -9,97 +9,92 @@ module FixtureSeed
   class << self
     def load_fixtures
       fixture_dir = Rails.root.join("db/fixtures").to_s
-      files_to_load = Dir.glob(File.join(fixture_dir, "*.yml")).sort
+      fixture_files = Dir.glob(File.join(fixture_dir, "*.yml"))
 
-      file_names = files_to_load.map { |f| File.basename(f) }.join(", ")
-      Rails.logger.info "[FixtureSeed] Found #{files_to_load.size} fixture files in #{fixture_dir}: #{file_names}"
+      return if fixture_files.empty?
+
+      # Extract table names from fixture files
+      table_names = fixture_files.map do |file|
+        File.basename(file, ".*").sub(/\.yml$/, "")
+      end.uniq
+
+      Rails.logger.info "[FixtureSeed] Found #{fixture_files.size} fixture files for tables: #{table_names.join(', ')}"
 
       # Load all fixtures with retry logic
-      unloaded_files = process_fixtures(fixture_dir, files_to_load)
+      unloaded_tables = process_fixtures_with_retry(fixture_dir, table_names)
 
       # Report any fixtures that still failed
-      if unloaded_files.empty?
+      if unloaded_tables.empty?
         Rails.logger.info "[FixtureSeed] All fixtures loaded successfully."
       else
-        message = "The following fixtures could not be loaded: #{unloaded_files.join(', ')}"
+        message = "The following fixtures could not be loaded: #{unloaded_tables.join(', ')}"
         Rails.logger.warn "[FixtureSeed] #{message}"
       end
     end
 
     private
 
-    def process_fixtures(fixture_dir, files)
-      remaining_files = files.dup
-      previous_count = remaining_files.size + 1
+    def process_fixtures_with_retry(fixture_dir, table_names)
+      remaining_tables = table_names.dup
+      previous_count = remaining_tables.size + 1
 
       # Continue until all fixtures are loaded or no progress is made
-      while !remaining_files.empty? && remaining_files.size < previous_count
-        previous_count = remaining_files.size
-        remaining_files = process_batch(fixture_dir, files, remaining_files)
+      while !remaining_tables.empty? && remaining_tables.size < previous_count
+        previous_count = remaining_tables.size
+        remaining_tables = process_batch_with_fixture_set(fixture_dir, table_names, remaining_tables)
       end
 
-      remaining_files
+      remaining_tables
     end
 
-    def process_batch(fixture_dir, original_files, current_files)
+    def process_batch_with_fixture_set(fixture_dir, original_tables, current_tables)
       still_failed = []
 
-      current_files.each do |file|
-        log_loading(file)
-        load_single_fixture(fixture_dir, file)
-        log_success(file, original_files, current_files)
+      current_tables.each do |table_name|
+        log_loading_table(table_name)
+        load_single_table_fixture(fixture_dir, table_name)
+        log_success_table(table_name, original_tables, current_tables)
       rescue ActiveRecord::InvalidForeignKey, ActiveRecord::StatementInvalid => e
-        log_failure(file, e, original_files, current_files)
-        still_failed << file
+        log_failure_table(table_name, e, original_tables, current_tables)
+        still_failed << table_name
       end
 
       still_failed
     end
 
-    def load_single_fixture(_fixture_dir, file)
-      table_name = File.basename(file, ".yml")
-      yaml_data = YAML.load_file(file)
-
-      model_class = begin
-        table_name.classify.constantize
-      rescue StandardError
-        nil
-      end
-
-      if model_class
-        yaml_data.each do |_fixture_name, attributes|
-          model_class.create!(attributes)
-        rescue StandardError => e
-          raise ActiveRecord::InvalidForeignKey, e.message
-        end
-      else
-        Rails.logger.warn "[FixtureSeed] Model for table #{table_name} not found"
-      end
+    def load_single_table_fixture(fixture_dir, table_name)
+      # Use ActiveRecord::FixtureSet.create_fixtures for ERB support and other features
+      ActiveRecord::FixtureSet.create_fixtures(fixture_dir, table_name)
+    rescue ActiveRecord::InvalidForeignKey, ActiveRecord::StatementInvalid => e
+      # Re-raise to be caught by the retry logic
+      raise e
+    rescue StandardError => e
+      # Convert other errors to InvalidForeignKey for retry logic
+      raise ActiveRecord::InvalidForeignKey, e.message
     end
 
-    def log_loading(file)
-      Rails.logger.info "[FixtureSeed] Loading fixture #{File.basename(file)}..."
+    def log_loading_table(table_name)
+      Rails.logger.info "[FixtureSeed] Loading fixture for table #{table_name}..."
     end
 
-    def log_success(file, original_files, current_files)
-      is_retry = original_files.size != current_files.size
-      if is_retry
-        Rails.logger.info "[FixtureSeed] Successfully loaded fixture #{File.basename(file)} on retry."
-      else
-        Rails.logger.info "[FixtureSeed] Loaded fixture #{File.basename(file)}"
-      end
+    def log_success_table(table_name, original_tables, current_tables)
+      is_retry = original_tables.size != current_tables.size
+      message = if is_retry
+                  "[FixtureSeed] Successfully loaded fixture for table #{table_name} on retry."
+                else
+                  "[FixtureSeed] Loaded fixture for table #{table_name}"
+                end
+      Rails.logger.info message
     end
 
-    def log_failure(file, error, original_files, current_files)
-      is_retry = original_files.size != current_files.size
-      filename = File.basename(file)
-      if is_retry
-        Rails.logger.warn "[FixtureSeed] Still failed to load fixture #{filename}: " \
-                          "#{error.message}. Will retry later."
-      else
-        Rails.logger.warn "[FixtureSeed] Failed to load fixture #{filename}: " \
-                          "#{error.message}. Will retry later."
-      end
+    def log_failure_table(table_name, error, original_tables, current_tables)
+      is_retry = original_tables.size != current_tables.size
+      message = if is_retry
+                  "[FixtureSeed] Still failed to load fixture for table #{table_name}: #{error.message}. Will retry later."
+                else
+                  "[FixtureSeed] Failed to load fixture for table #{table_name}: #{error.message}. Will retry later."
+                end
+      Rails.logger.warn message
     end
   end
 end

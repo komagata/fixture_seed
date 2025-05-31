@@ -45,16 +45,34 @@ ActiveRecord::Schema.define do
     t.index [:user_id], name: "index_posts_on_user_id"
   end
 
+  create_table :comments do |t|
+    t.text :content, null: false
+    t.integer :post_id, null: false
+    t.integer :user_id, null: false
+    t.timestamps
+    t.index [:post_id], name: "index_comments_on_post_id"
+    t.index [:user_id], name: "index_comments_on_user_id"
+  end
+
   add_foreign_key :posts, :users
+  add_foreign_key :comments, :posts
+  add_foreign_key :comments, :users
 end
 
 # Define model classes
 class User < ActiveRecord::Base
   has_many :posts
+  has_many :comments
 end
 
 class Post < ActiveRecord::Base
   belongs_to :user
+  has_many :comments
+end
+
+class Comment < ActiveRecord::Base
+  belongs_to :user
+  belongs_to :post
 end
 
 # Load the fixture_seed library first
@@ -62,7 +80,8 @@ require_relative "../lib/fixture_seed"
 
 class BaseFixtureSeedTest < Minitest::Test
   def setup
-    # Clear database before each test - delete posts first to avoid foreign key constraint
+    # Clear database before each test - delete in reverse dependency order to avoid foreign key constraint
+    Comment.delete_all
     Post.delete_all
     User.delete_all
 
@@ -235,5 +254,164 @@ class DependencyResolutionTest < BaseFixtureSeedTest
     assert_equal 1, Post.count
     assert_equal "Test Post", Post.first.title
     assert_equal User.first.id, Post.first.user_id
+  end
+
+  def test_complex_dependency_resolution_with_comments
+    # Create fixture files in alphabetical order that creates a complex dependency chain
+    # comments.yml (depends on posts and users) - loads first alphabetically
+    File.write(File.join(FIXTURE_DIR, "comments.yml"), <<~YAML)
+      comment_1:
+        id: 1
+        content: "Great post!"
+        post_id: 1
+        user_id: 1
+      comment_2:
+        id: 2
+        content: "Thanks for sharing!"
+        post_id: 1
+        user_id: 2
+    YAML
+
+    # posts.yml (depends on users) - loads second alphabetically
+    File.write(File.join(FIXTURE_DIR, "posts.yml"), <<~YAML)
+      post_1:
+        id: 1
+        title: Test Post
+        user_id: 1
+    YAML
+
+    # users.yml (no dependencies) - loads last alphabetically
+    File.write(File.join(FIXTURE_DIR, "users.yml"), <<~YAML)
+      user_1:
+        id: 1
+        name: Test User
+        email: test@example.com
+      user_2:
+        id: 2
+        name: Another User
+        email: another@example.com
+    YAML
+
+    # Use the actual FixtureSeed implementation to test order-independent loading
+    FixtureSeed.load_fixtures
+
+    # Verify all records were created despite the complex dependency chain
+    assert_equal 2, User.count
+    assert_equal 1, Post.count
+    assert_equal 2, Comment.count
+
+    # Verify relationships are correct
+    post = Post.first
+    assert_equal 1, post.user_id
+    assert_equal "Test Post", post.title
+
+    comments = Comment.order(:id)
+    assert_equal "Great post!", comments[0].content
+    assert_equal 1, comments[0].post_id
+    assert_equal 1, comments[0].user_id
+
+    assert_equal "Thanks for sharing!", comments[1].content
+    assert_equal 1, comments[1].post_id
+    assert_equal 2, comments[1].user_id
+
+    # Verify associations work
+    user1 = User.find(1)
+    user2 = User.find(2)
+    assert_equal 1, user1.posts.count
+    assert_equal 0, user2.posts.count
+    assert_equal 1, user1.comments.count
+    assert_equal 1, user2.comments.count
+  end
+end
+
+# Test for ERB support in fixture files
+class ERBFixturesTest < BaseFixtureSeedTest
+  def setup
+    # Clear database before each test - delete in reverse dependency order to avoid foreign key constraint
+    Comment.delete_all
+    Post.delete_all
+    User.delete_all
+
+    # Set up fixture directory but don't remove it completely for ERB tests
+    FileUtils.mkdir_p(FIXTURE_DIR)
+
+    # Store the original method but don't override it for ERB tests
+    @original_load_fixtures = FixtureSeed.method(:load_fixtures)
+  end
+
+  def teardown
+    # Clean up any fixture files created during the test
+    Dir.glob(File.join(FIXTURE_DIR, "*.yml")).each { |f| File.delete(f) }
+  end
+
+  def test_erb_fixtures_loading
+    # Clear any existing users and fixture files first
+    User.delete_all
+    Dir.glob(File.join(FIXTURE_DIR, "*.yml")).each { |f| File.delete(f) }
+
+    # Create a fixture file with ERB template
+    File.write(File.join(FIXTURE_DIR, "users.yml"), <<~ERB)
+      <% 3.times do |i| %>
+      erb_user<%= i + 1 %>:
+        id: <%= 100 + i + 1 %>
+        name: "ERB User <%= i + 1 %>"
+        email: "erb_user<%= i + 1 %>@example.com"
+        created_at: <%= Time.new(2023, 1, 1) %>
+      <% end %>
+    ERB
+
+    # Use the actual FixtureSeed implementation with ActiveRecord::FixtureSet
+    FixtureSeed.load_fixtures
+
+    # Check that ERB was processed and 3 users were created
+    assert_equal 3, User.count
+
+    # Verify the generated data
+    users = User.order(:id)
+
+    assert_equal 101, users[0].id
+    assert_equal "ERB User 1", users[0].name
+    assert_equal "erb_user1@example.com", users[0].email
+
+    assert_equal 102, users[1].id
+    assert_equal "ERB User 2", users[1].name
+    assert_equal "erb_user2@example.com", users[1].email
+
+    assert_equal 103, users[2].id
+    assert_equal "ERB User 3", users[2].name
+    assert_equal "erb_user3@example.com", users[2].email
+  end
+
+  def test_erb_with_rails_environment_access
+    # Clear any existing users first
+    User.delete_all
+
+    # Create a fixture file that uses Rails environment features
+    File.write(File.join(FIXTURE_DIR, "users.yml"), <<~ERB)
+      <% current_time = Time.new(2023, 6, 15, 12, 0, 0) %>
+      erb_user_with_time:
+        id: 200
+        name: "User with Time"
+        email: "time_user@example.com"
+        created_at: <%= current_time %>
+        updated_at: <%= current_time %>
+    ERB
+
+    # Use the actual FixtureSeed implementation
+    FixtureSeed.load_fixtures
+
+    # Check that ERB was processed correctly
+    assert_equal 1, User.count
+
+    user = User.first
+    assert_equal 200, user.id
+    assert_equal "User with Time", user.name
+    assert_equal "time_user@example.com", user.email
+
+    # Verify the timestamp was processed correctly (just check the date part)
+    expected_time = Time.new(2023, 6, 15, 12, 0, 0)
+    assert_equal expected_time.year, user.created_at.year
+    assert_equal expected_time.month, user.created_at.month
+    assert_equal expected_time.day, user.created_at.day
   end
 end
