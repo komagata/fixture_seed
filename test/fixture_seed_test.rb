@@ -1,174 +1,124 @@
 # frozen_string_literal: true
 
-require "minitest/autorun"
-require "active_record"
-require "sqlite3"
-require "pathname"
-require "fileutils"
-require "logger"
-require "stringio"
-require "yaml"
-
-# Load fixture_seed library
-require_relative "../lib/fixture_seed"
-
-# Fixture directory path for testing
-FIXTURE_DIR = File.expand_path("dummy/db/fixtures", __dir__)
-
-# Rails stubs
-module Rails
-  def self.root
-    Pathname.new(File.expand_path("dummy", __dir__))
-  end
-
-  def self.logger
-    @logger ||= Logger.new($stdout)
-  end
-end
-
-# In-memory database
-ActiveRecord::Base.establish_connection(
-  adapter: "sqlite3",
-  database: ":memory:"
-)
-
-# Schema definition
-ActiveRecord::Schema.define do
-  create_table :users do |t|
-    t.string :name, null: false
-    t.string :email, null: false
-    t.timestamps
-  end
-
-  create_table :posts do |t|
-    t.string :title, null: false
-    t.text :content
-    t.integer :user_id, null: false
-    t.timestamps
-    t.index [:user_id], name: "index_posts_on_user_id"
-  end
-
-  create_table :comments do |t|
-    t.text :body, null: false
-    t.integer :post_id, null: false
-    t.timestamps
-    t.index [:post_id], name: "index_comments_on_post_id"
-  end
-
-  add_foreign_key :posts, :users
-  add_foreign_key :comments, :posts
-end
-
-# Model definitions
-class User < ActiveRecord::Base
-  has_many :posts, dependent: :destroy
-end
-
-class Post < ActiveRecord::Base
-  belongs_to :user
-  has_many :comments, dependent: :destroy
-end
-
-class Comment < ActiveRecord::Base
-  belongs_to :post
-end
+require_relative "test_helper"
 
 class FixtureSeedTest < Minitest::Test
-  def setup
-    # Clear tables in correct order for foreign key constraints
-    Comment.delete_all
-    Post.delete_all
-    User.delete_all
+  include TestHelper
 
-    # Create fixture directory
-    FileUtils.rm_rf(FIXTURE_DIR)
-    FileUtils.mkdir_p(FIXTURE_DIR)
+  def test_fixture_loading_without_constraints
+    fixture_dir = create_fixture_dir
+
+    File.write(File.join(fixture_dir, "users.yml"), <<~YAML)
+      user_1:
+        id: 1
+        name: "Test User 1"
+        email: "user1@example.com"
+
+      user_2:
+        id: 2
+        name: "Test User 2"
+        email: "user2@example.com"
+    YAML
+
+    File.write(File.join(fixture_dir, "tools.yml"), <<~YAML)
+      tool_1:
+        name: "Hammer"
+        description: "Useful tool"
+        user_id: 1
+
+      tool_2:
+        name: "Screwdriver"
+        description: "Another useful tool"
+        user_id: 2
+    YAML
+
+    FixtureSeed.load_fixtures(fixture_dir)
+
+    assert_equal 2, User.count
+    assert_equal 2, Tool.count
+    assert_equal "Test User 1", User.find_by(email: "user1@example.com").name
+    assert_equal "Test User 2", User.find_by(email: "user2@example.com").name
+
+    hammer = Tool.find_by(name: "Hammer")
+    screwdriver = Tool.find_by(name: "Screwdriver")
+    assert_equal "Test User 1", hammer.user.name
+    assert_equal "Test User 2", screwdriver.user.name
+  ensure
+    cleanup_fixture_dir(fixture_dir) if fixture_dir
   end
 
-  def test_normal_order_fixtures
-    # Create fixtures in natural dependency order
-    File.write(File.join(FIXTURE_DIR, "users.yml"), <<~YAML)
-      user1:
-        id: 1
-        name: Test User
-        email: test@example.com
-    YAML
+  def test_fixture_loading_with_foreign_key_constraints
+    fixture_dir = create_fixture_dir
 
-    File.write(File.join(FIXTURE_DIR, "posts.yml"), <<~YAML)
-      post1:
-        id: 1
-        title: Test Post
-        content: This is a test post
+    File.write(File.join(fixture_dir, "comments.yml"), <<~YAML)
+      comment_1:
+        content: "First comment"
         user_id: 1
+
+      comment_2:
+        content: "Second comment"
+        user_id: 2
     YAML
 
-    File.write(File.join(FIXTURE_DIR, "comments.yml"), <<~YAML)
-      comment1:
+    File.write(File.join(fixture_dir, "users.yml"), <<~YAML)
+      user_1:
         id: 1
-        body: This is a test comment
-        post_id: 1
+        name: "Test User 1"
+        email: "user1@example.com"
+
+      user_2:
+        id: 2
+        name: "Test User 2"
+        email: "user2@example.com"
     YAML
 
-    FixtureSeed.load_fixtures
+    FixtureSeed.load_fixtures(fixture_dir)
 
-    # Verify data was loaded correctly
-    assert_equal 1, User.count
-    assert_equal 1, Post.count
-    assert_equal 1, Comment.count
+    assert_equal 2, User.count
+    assert_equal 2, Comment.count
 
-    # Verify associations
-    user = User.first
-    post = Post.first
-    comment = Comment.first
+    user1 = User.find(1)
+    user2 = User.find(2)
+    comment1 = Comment.find_by(content: "First comment")
+    comment2 = Comment.find_by(content: "Second comment")
 
-    assert_equal "Test User", user.name
-    assert_equal "Test Post", post.title
-    assert_equal "This is a test comment", comment.body
-    assert_equal user.id, post.user_id
-    assert_equal post.id, comment.post_id
+    assert_equal user1, comment1.user
+    assert_equal user2, comment2.user
+    assert_equal "Test User 1", comment1.user.name
+    assert_equal "Test User 2", comment2.user.name
+  ensure
+    cleanup_fixture_dir(fixture_dir) if fixture_dir
   end
 
-  def test_reversed_order_fixtures
-    # Create fixtures in reverse dependency order
-    File.write(File.join(FIXTURE_DIR, "comments.yml"), <<~YAML)
-      comment1:
-        id: 1
-        body: This is a test comment
-        post_id: 1
-    YAML
+  def test_foreign_key_constraint_behavior
+    adapter_name = ActiveRecord::Base.connection.adapter_name.downcase
 
-    File.write(File.join(FIXTURE_DIR, "posts.yml"), <<~YAML)
-      post1:
-        id: 1
-        title: Test Post
-        content: This is a test post
-        user_id: 1
-    YAML
+    skip "Not SQLite" unless adapter_name.include?("sqlite")
 
-    File.write(File.join(FIXTURE_DIR, "users.yml"), <<~YAML)
-      user1:
-        id: 1
-        name: Test User
-        email: test@example.com
-    YAML
+    fixture_dir = create_fixture_dir
 
-    # Load fixtures with retry logic
-    FixtureSeed.load_fixtures
+    begin
+      File.write(File.join(fixture_dir, "comments.yml"), <<~YAML)
+        comment_1:
+          content: "Comment with non-existent user"
+          user_id: 999
+      YAML
 
-    # Verify data was loaded correctly
-    assert_equal 1, User.count, "User record not created"
-    assert_equal 1, Post.count, "Post record not created"
-    assert_equal 1, Comment.count, "Comment record not created"
+      File.write(File.join(fixture_dir, "users.yml"), <<~YAML)
+        user_1:
+          id: 999
+          name: "User created after comment"
+          email: "late@example.com"
+      YAML
 
-    # Verify associations
-    user = User.first
-    post = Post.first
-    comment = Comment.first
+      FixtureSeed.load_fixtures(fixture_dir)
 
-    assert_equal "Test User", user.name
-    assert_equal "Test Post", post.title
-    assert_equal "This is a test comment", comment.body
-    assert_equal user.id, post.user_id
-    assert_equal post.id, comment.post_id
+      assert_equal 1, User.count
+      assert_equal 1, Comment.count
+      assert_equal 999, Comment.first.user_id
+      assert_equal 999, User.first.id
+    ensure
+      cleanup_fixture_dir(fixture_dir) if fixture_dir
+    end
   end
 end

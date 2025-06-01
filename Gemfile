@@ -5,13 +5,13 @@ source "https://rubygems.org"
 # Specify your gem's dependencies in fixture_seed.gemspec
 gemspec
 
-gem "activerecord", "~> 7.0.0"
+gem "activerecord", "~> 8.0.0"
 gem "benchmark"
 gem "bigdecimal"
 gem "logger"
 gem "minitest", "~> 5.0"
 gem "mutex_m"
-gem "rails", "~> 7.0.0"
+gem "rails", "~> 8.0.0"
 gem "rake", "~> 13.0"
 gem "sqlite3", "~> 2.1"
 
