@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "active_record/fixtures"
+
 module FixtureSeed
   class Loader
     class << self
