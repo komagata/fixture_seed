@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "active_record/fixtures"
+require "active_record"
 
 module FixtureSeed
   class Loader
@@ -36,18 +36,9 @@ module FixtureSeed
         table_names = fixture_files.map { |f| File.basename(f, ".yml") }
         logger.info "[FixtureSeed] Found tables: #{table_names.join(', ')}"
 
-        ordered_tables = dependency_ordered_tables(table_names)
-
-        ordered_tables.each do |table_name|
+        table_names.each do |table_name|
           ActiveRecord::FixtureSet.create_fixtures(fixtures_dir.to_s, [table_name])
         end
-      end
-
-      def dependency_ordered_tables(table_names)
-        ordered = []
-        ordered << "users" if table_names.include?("users")
-        ordered += (table_names - ["users"])
-        ordered
       end
 
       def with_foreign_keys_disabled
