@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_record"
+require "active_record/fixtures"
 
 module FixtureSeed
   class Loader
@@ -33,6 +34,12 @@ module FixtureSeed
 
         table_names = fixture_files.map { |f| File.basename(f, ".yml") }
         Rails.logger&.info "[FixtureSeed] Found tables: #{table_names.join(', ')}"
+
+        # Check if FixtureSet is available
+        unless defined?(ActiveRecord::FixtureSet)
+          Rails.logger&.error "[FixtureSeed] ActiveRecord::FixtureSet is not available. Please ensure you're using Rails 4.0+ or include 'active_record/fixtures'."
+          return
+        end
 
         ActiveRecord::Base.connection.disable_referential_integrity do
           ActiveRecord::FixtureSet.create_fixtures(fixtures_dir.to_s, table_names)
