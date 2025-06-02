@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    fixture_seed (0.3.1)
+    fixture_seed (0.3.3)
       rails (>= 5.0)
 
 GEM
