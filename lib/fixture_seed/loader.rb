@@ -9,43 +9,22 @@ module FixtureSeed
 
     class << self
       def load_fixtures(fixtures_path = nil)
-        fixtures_path ||= ENV["FIXTURES_PATH"] || DEFAULT_FIXTURES_PATH
+        fixtures_path ||= ENV["FIXTURES_PATH"] || "db/fixtures"
         fixtures_dir = Rails.root.join(fixtures_path)
+        fixture_names = discover_fixture_names(fixtures_dir)
 
-        return unless fixtures_directory_exists?(fixtures_dir, fixtures_path)
-
-        load_fixture_files(fixtures_dir, fixtures_path)
+        ActiveRecord::Base.connection.disable_referential_integrity do
+          ActiveRecord::FixtureSet.create_fixtures(fixtures_dir.to_s, fixture_names)
+        end
       end
 
       private
 
-      def fixtures_directory_exists?(fixtures_dir, fixtures_path)
-        return true if Dir.exist?(fixtures_dir)
-
-        Rails.logger&.info "[FixtureSeed] Fixtures directory not found: #{fixtures_path}"
-        false
-      end
-
-      def load_fixture_files(fixtures_dir, fixtures_path)
-        Rails.logger&.info "[FixtureSeed] Loading fixtures from #{fixtures_path}"
-
-        fixture_files = Dir.glob("#{fixtures_dir}/*.yml")
-        return if fixture_files.empty?
-
-        table_names = fixture_files.map { |f| File.basename(f, ".yml") }
-        Rails.logger&.info "[FixtureSeed] Found tables: #{table_names.join(', ')}"
-
-        # Check if FixtureSet is available
-        unless defined?(ActiveRecord::FixtureSet)
-          Rails.logger&.error "[FixtureSeed] ActiveRecord::FixtureSet is not available. Please ensure you're using Rails 4.0+ or include 'active_record/fixtures'."
-          return
+      def discover_fixture_names(fixtures_dir)
+        fixture_files = Dir[File.join(fixtures_dir, "**/*.yml")]
+        fixture_files.map do |file|
+          file[fixtures_dir.to_s.size..-5].delete_prefix("/")
         end
-
-        ActiveRecord::Base.connection.disable_referential_integrity do
-          ActiveRecord::FixtureSet.create_fixtures(fixtures_dir.to_s, table_names)
-        end
-
-        Rails.logger&.info "[FixtureSeed] Finished loading fixtures"
       end
     end
   end
